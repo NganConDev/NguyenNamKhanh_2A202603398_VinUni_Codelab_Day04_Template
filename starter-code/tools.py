@@ -22,9 +22,29 @@ def search_product_catalog(category: str, max_price: int = 999999999999) -> List
         Danh sách sản phẩm phù hợp điều kiện.
     """
     catalog_file = os.path.join(RAW_DATA_DIR, "product_catalog.json")
-    # TODO: Kiểm tra file tồn tại, đọc JSON, lọc sản phẩm
-    # Gợi ý: Lọc theo p["category"] == category AND p["price_vnd"] <= max_price
-    return []
+    if not os.path.exists(catalog_file):
+        return []
+
+    try:
+        with open(catalog_file, "r", encoding="utf-8") as f:
+            catalog = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
+
+    category = (category or "").strip().lower()
+    if not category:
+        return []
+
+    try:
+        limit = int(max_price)
+    except (TypeError, ValueError):
+        limit = 999999999999
+
+    return [
+        product for product in catalog
+        if str(product.get("category", "")).lower() == category
+        and int(product.get("price_vnd", 0)) <= limit
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -49,9 +69,50 @@ def submit_support_ticket(
         Thông tin ticket vừa tạo bao gồm ticket_id, status.
     """
     tickets_file = os.path.join(RAW_DATA_DIR, "support_tickets.json")
-    # TODO: Load existing tickets, generate new ticket_id, append new ticket, save file
-    # Gợi ý: ticket_id = f"TK-{today}-{seq:03d}" với today = datetime.now().strftime("%Y%m%d")
-    return {"ticket_id": "TODO", "status": "TODO"}
+
+    if not customer_name or not issue_description:
+        raise ValueError("customer_name và issue_description không được để trống.")
+
+    priority = (priority or "medium").strip().lower()
+    if priority not in {"low", "medium", "high"}:
+        priority = "medium"
+
+    existing_tickets: List[Dict[str, Any]] = []
+    if os.path.exists(tickets_file):
+        try:
+            with open(tickets_file, "r", encoding="utf-8") as f:
+                existing_tickets = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            existing_tickets = []
+
+    if not isinstance(existing_tickets, list):
+        existing_tickets = []
+
+    today = datetime.now().strftime("%Y%m%d")
+    seq = 1
+    for ticket in existing_tickets:
+        ticket_id = str(ticket.get("ticket_id", ""))
+        if ticket_id.startswith(f"TK-{today}-"):
+            seq += 1
+
+    ticket_id = f"TK-{today}-{seq:03d}"
+    created_at = datetime.now().isoformat()
+    new_ticket = {
+        "ticket_id": ticket_id,
+        "customer_name": customer_name,
+        "issue_description": issue_description,
+        "priority": priority,
+        "status": "open",
+        "created_at": created_at,
+        "category": "general"
+    }
+
+    existing_tickets.append(new_ticket)
+
+    with open(tickets_file, "w", encoding="utf-8") as f:
+        json.dump(existing_tickets, f, ensure_ascii=False, indent=2)
+
+    return new_ticket
 
 
 # ---------------------------------------------------------------------------
@@ -60,8 +121,56 @@ def submit_support_ticket(
 # ---------------------------------------------------------------------------
 
 TOOL_DEFINITIONS = [
-    # TODO: Thêm schema cho "search_product_catalog"
-    # TODO: Thêm schema cho "submit_support_ticket"
+    {
+        "type": "function",
+        "function": {
+            "name": "search_product_catalog",
+            "description": "Tra cứu sản phẩm/dịch vụ Vingroup theo danh mục và giá tối đa.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "enum": ["xe_dien", "du_lich"],
+                        "description": "Loại sản phẩm cần tìm: xe_dien hoặc du_lich."
+                    },
+                    "max_price": {
+                        "type": "integer",
+                        "description": "Giá tối đa theo VNĐ để lọc sản phẩm."
+                    }
+                },
+                "required": ["category"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "submit_support_ticket",
+            "description": "Ghi nhận yêu cầu hỗ trợ của khách hàng và tạo ticket mới trong hệ thống.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "customer_name": {
+                        "type": "string",
+                        "description": "Tên khách hàng cần tạo ticket."
+                    },
+                    "issue_description": {
+                        "type": "string",
+                        "description": "Mô tả chi tiết vấn đề cần hỗ trợ."
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"],
+                        "description": "Mức độ ưu tiên của ticket."
+                    }
+                },
+                "required": ["customer_name", "issue_description"],
+                "additionalProperties": False
+            }
+        }
+    }
 ]
 
 
